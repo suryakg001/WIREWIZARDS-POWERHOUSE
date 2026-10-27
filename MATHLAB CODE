@@ -1,0 +1,72 @@
+%% Cold Storage Temperature Stability Monitor
+% Simulated data + temperature alert + simple prediction
+
+clear;
+clc;
+close all;
+
+%% Settings
+safeMin = 2;             % Example safe range: 2 to 8 deg C
+safeMax = 8;
+totalHours = 6;
+sampleMinutes = 5;
+predictionMinutes = 30;
+
+%% Generate demo temperature data
+time = (0:sampleMinutes:totalHours*60)';
+temperature = 5 + 0.4*sin(time/35) + 0.25*randn(size(time));
+
+% Simulate a cooling problem during the final hour
+faultStart = round(5*60/sampleMinutes) + 1;
+temperature(faultStart:end) = temperature(faultStart:end) + ...
+    linspace(0, 5, numel(temperature)-faultStart+1)';
+
+%% Detect current status
+currentTemp = temperature(end);
+
+if currentTemp < safeMin
+    status = "TOO COLD";
+elseif currentTemp > safeMax
+    status = "WARNING: TOO WARM";
+else
+    status = "NORMAL";
+end
+
+fprintf("Current temperature: %.2f °C\n", currentTemp);
+fprintf("Status: %s\n", status);
+
+%% Predict temperature over the next 30 minutes
+% Fit a straight line to the most recent 60 minutes of data.
+recentWindow = min(numel(time), round(60/sampleMinutes) + 1);
+recentTime = time(end-recentWindow+1:end);
+recentTemp = temperature(end-recentWindow+1:end);
+
+coefficients = polyfit(recentTime, recentTemp, 1);
+
+futureTime = (time(end)+sampleMinutes:sampleMinutes: ...
+    time(end)+predictionMinutes)';
+predictedTemp = polyval(coefficients, futureTime);
+
+fprintf("\nPredicted temperature in %d minutes: %.2f °C\n", ...
+    predictionMinutes, predictedTemp(end));
+
+if predictedTemp(end) > safeMax
+    fprintf("PREDICTION ALERT: Temperature may exceed the safe limit.\n");
+end
+
+%% Plot temperature history and prediction
+figure('Color', 'w');
+
+plot(time/60, temperature, 'b-', 'LineWidth', 1.8);
+hold on;
+
+plot(futureTime/60, predictedTemp, 'r--', 'LineWidth', 2);
+yline(safeMax, 'k--', 'Maximum safe temperature');
+yline(safeMin, 'k:', 'Minimum safe temperature');
+
+xlabel('Time (hours)');
+ylabel('Temperature (°C)');
+title('Cold Storage Temperature Stability Monitor');
+legend('Measured temperature', 'Predicted temperature', ...
+    'Safe maximum', 'Safe minimum', 'Location', 'best');
+grid on;

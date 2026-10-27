@@ -1,0 +1,115 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// I2C LCD address, 16 columns, 2 rows
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+const int sensorPin = A0;
+const int warningLedPin = 9;
+const int buzzerPin = 2;
+const int fanPin = 10;
+const int heaterLedPin = 6;
+
+// Configured safe range
+const float safeMin = 4;
+const float safeMax = 8;
+
+// Hysteresis limits stop the fan/heater from switching rapidly
+const float fanOffTemp = 7.5;
+const float heaterOffTemp = 4.5;
+
+enum SystemMode {
+  NORMAL,
+  COOLING,
+  HEATING
+};
+
+SystemMode mode = NORMAL;
+
+void setup() {
+  pinMode(warningLedPin, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);
+  pinMode(fanPin, OUTPUT);
+  pinMode(heaterLedPin, OUTPUT);
+
+  lcd.init();
+  lcd.backlight();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Cold Storage");
+  lcd.setCursor(0, 1);
+  lcd.print("Starting...");
+  delay(1500);
+  lcd.clear();
+
+  Serial.begin(9600);
+}
+
+void loop() {
+  // Read TMP36 sensor
+  int sensorValue = analogRead(sensorPin);
+
+  // Convert sensor reading to voltage, then Celsius
+  float voltage = sensorValue * (5.0 / 1023.0);
+  float temperatureC = (voltage - 0.5) * 100.0;
+
+  // Decide which action is needed
+  if (temperatureC > safeMax) {
+    mode = COOLING;
+  } else if (temperatureC < safeMin) {
+    mode = HEATING;
+  } else if (mode == COOLING && temperatureC <= fanOffTemp) {
+    mode = NORMAL;
+  } else if (mode == HEATING && temperatureC >= heaterOffTemp) {
+    mode = NORMAL;
+  }
+
+  // Show temperature on the first LCD row
+  lcd.setCursor(0, 0);
+  lcd.print("Temp: ");
+  lcd.print(temperatureC, 1);
+  lcd.print((char)223);
+  lcd.print("C    ");
+
+  // Turn on the required output and show status
+  if (mode == COOLING) {
+    digitalWrite(fanPin, HIGH);
+    digitalWrite(heaterLedPin, LOW);
+    digitalWrite(warningLedPin, HIGH);
+    tone(buzzerPin, 1000);
+
+    lcd.setCursor(0, 1);
+    lcd.print("TOO HOT: FAN ON ");
+  } else if (mode == HEATING) {
+    digitalWrite(fanPin, LOW);
+    digitalWrite(heaterLedPin, HIGH);
+    digitalWrite(warningLedPin, HIGH);
+    tone(buzzerPin, 1000);
+
+    lcd.setCursor(0, 1);
+    lcd.print("TOO COLD: HEAT  ");
+  } else {
+    digitalWrite(fanPin, LOW);
+    digitalWrite(heaterLedPin, LOW);
+    digitalWrite(warningLedPin, LOW);
+    noTone(buzzerPin);
+
+    lcd.setCursor(0, 1);
+    lcd.print("TEMP: STABLE    ");
+  }
+
+  // Also show the reading and mode in Serial Monitor
+  Serial.print("Temperature: ");
+  Serial.print(temperatureC, 1);
+  Serial.print(" C | Mode: ");
+
+  if (mode == COOLING) {
+    Serial.println("Cooling ON");
+  } else if (mode == HEATING) {
+    Serial.println("Heating indicator ON");
+  } else {
+    Serial.println("Stable");
+  }
+
+  delay(1000);
+}
